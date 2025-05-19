@@ -1,0 +1,371 @@
+using SolidWorks.Interop.sldworks;
+using SolidWorks.Interop.swconst;
+using System;
+using System.Drawing;
+using System.Runtime.InteropServices;
+using System.Windows.Forms;
+
+namespace _7solidlab
+{
+    public partial class Form1 : Form
+    {
+        private TextBox txtWidth, txtDepth, txtHeight;
+        private TextBox txtMinDia, txtMaxDia, txtStep;
+        private Button btnCutBox, btnCutHoles;
+
+        private ISldWorks swApp;
+
+        private PictureBox pictureBoxPreview;
+
+        public Form1()
+        {
+            SetupUI();
+            ConnectToSolidWorks();
+            InitializePictureBox();
+        }
+
+        private void ConnectToSolidWorks()
+        {
+            try
+            {
+                swApp = (ISldWorks)Marshal.GetActiveObject("SldWorks.Application");
+            }
+            catch
+            {
+                MessageBox.Show("Не удалось подключиться к SolidWorks. Убедитесь, что SolidWorks запущен!", "Ошибка",
+                    MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+        private void InitializePictureBox()
+        {
+            // Создаем PictureBox
+            pictureBoxPreview = new PictureBox();
+            pictureBoxPreview.Name = "pictureBoxPreview";
+
+            // Устанавливаем позицию и размеры — 2/3 ширины формы
+            int padding = 20;
+            int formWidth = this.ClientSize.Width;
+            int formHeight = this.ClientSize.Height;
+
+            int pictureBoxWidth = (int)(formWidth * 0.66); // 2/3 ширины
+            int pictureBoxHeight = formHeight - 2 * padding;
+
+            pictureBoxPreview.Location = new Point(formWidth - pictureBoxWidth - padding, padding);
+            pictureBoxPreview.Size = new Size(pictureBoxWidth, pictureBoxHeight);
+
+            // Настройка отображения изображения
+            pictureBoxPreview.BorderStyle = BorderStyle.FixedSingle;
+            pictureBoxPreview.SizeMode = PictureBoxSizeMode.Zoom;
+
+            pictureBoxPreview.Image = Image.FromFile(@"D:\Comp\Downloads\task7.jpg");
+
+            // Добавляем PictureBox на форму
+            this.Controls.Add(pictureBoxPreview);
+
+            // Обработка изменения размера формы
+            //this.Resize += Form1_Resize;
+        }
+
+        //private void Form1_Resize(object sender, EventArgs e)
+        //{
+        //    Автоматически подгоняем PictureBox при изменении размера формы
+        //    int padding = 20;
+        //    int formWidth = this.ClientSize.Width;
+        //    int formHeight = this.ClientSize.Height;
+
+        //    int pictureBoxWidth = (int)(formWidth * 0.66); // 2/3 ширины
+        //    int pictureBoxHeight = formHeight - 2 * padding;
+
+        //    pictureBoxPreview.Location = new Point(formWidth - pictureBoxWidth - padding, padding);
+        //    pictureBoxPreview.Size = new Size(pictureBoxWidth, pictureBoxHeight);
+        //}
+
+        private void SetupUI()
+        {
+            this.Text = "SolidWorks - Кириллов В.А. 10702222";
+            this.ClientSize = new System.Drawing.Size(1000, 460);
+
+            int y = 20;
+            this.Controls.AddRange(new Control[]
+            {
+                new Label { Text = "Ширина (X), мм:", Location = new System.Drawing.Point(20, y), Size = new System.Drawing.Size(120, 20) },
+                txtWidth = new TextBox { Location = new System.Drawing.Point(160, y), Size = new System.Drawing.Size(120, 20), Text = "100" },
+
+                new Label { Text = "Глубина (Z), мм:", Location = new System.Drawing.Point(20, y+=30), Size = new System.Drawing.Size(120, 20) },
+                txtDepth = new TextBox { Location = new System.Drawing.Point(160, y), Size = new System.Drawing.Size(120, 20), Text = "80" },
+
+                new Label { Text = "Высота (Y), мм:", Location = new System.Drawing.Point(20, y+=30), Size = new System.Drawing.Size(120, 20) },
+                txtHeight = new TextBox { Location = new System.Drawing.Point(160, y), Size = new System.Drawing.Size(120, 20), Text = "20" }
+            });
+
+            btnCutBox = new Button
+            {
+                Text = "Вырезать параллелепипед",
+                Location = new System.Drawing.Point(60, y += 40),
+                Size = new System.Drawing.Size(200, 30)
+            };
+            btnCutBox.Click += BtnCutBox_Click;
+            this.Controls.Add(btnCutBox);
+
+            this.Controls.AddRange(new Control[]
+            {
+                new Label { Text = "Мин. диаметр (мм):", Location = new System.Drawing.Point(20, y += 40), Size = new System.Drawing.Size(130, 20) },
+                txtMinDia = new TextBox { Location = new System.Drawing.Point(160, y), Size = new System.Drawing.Size(120, 20), Text = "10" },
+
+                new Label { Text = "Макс. диаметр (мм):", Location = new System.Drawing.Point(20, y += 30), Size = new System.Drawing.Size(130, 20) },
+                txtMaxDia = new TextBox { Location = new System.Drawing.Point(160, y), Size = new System.Drawing.Size(120, 20), Text = "80" },
+
+                new Label { Text = "Шаг (мм):", Location = new System.Drawing.Point(20, y += 30), Size = new System.Drawing.Size(130, 20) },
+                txtStep = new TextBox { Location = new System.Drawing.Point(160, y), Size = new System.Drawing.Size(120, 20), Text = "10" }
+            });
+
+            btnCutHoles = new Button
+            {
+                Text = "Цилиндры от меньшего к большему",
+                Location = new System.Drawing.Point(60, y += 40),
+                Size = new System.Drawing.Size(200, 30)
+            };
+            btnCutHoles.Click += BtnCutHoles_Click;
+            this.Controls.Add(btnCutHoles);
+
+            Button btnCutHolesReverse = new Button
+            {
+                Text = "Цилиндры от большего к меньшему",
+                Location = new System.Drawing.Point(60, y += 40),
+                Size = new System.Drawing.Size(200, 30)
+            };
+            btnCutHolesReverse.Click += BtnCutHolesReverse_Click;
+            this.Controls.Add(btnCutHolesReverse);
+        }
+
+        private bool ValidateBoxInputs(out double width, out double depth, out double height)
+        {
+            width = depth = height = 0;
+            return double.TryParse(txtWidth.Text, out width) && double.TryParse(txtDepth.Text, out depth)
+                && double.TryParse(txtHeight.Text, out height) && width > 0 && depth > 0 && height > 0;
+        }
+
+        private bool ValidateHoleInputs(out double min, out double max, out double step)
+        {
+            min = max = step = 0;
+            return double.TryParse(txtMinDia.Text, out min)
+                && double.TryParse(txtMaxDia.Text, out max) && double.TryParse(txtStep.Text, out step)
+                && min > 0 && max > min && step > 0;
+        }
+
+        private bool ValidateDocument(ModelDoc2 swModel)
+        {
+            if (swModel == null || swModel.GetType() != (int)swDocumentTypes_e.swDocPART)
+            {
+                MessageBox.Show("Откройте деталь SolidWorks.", "Ошибка", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                return false;
+            }
+            return true;
+        }
+
+        private bool HasSolidBody(ModelDoc2 swModel)
+        {
+            PartDoc part = (PartDoc)swModel;
+            object[] bodies = (object[])part.GetBodies2((int)swBodyType_e.swSolidBody, true);
+            return bodies != null && bodies.Length > 0;
+        }
+
+        private void InitializeComponent()
+        {
+            this.SuspendLayout();
+            // 
+            // Form1
+            // 
+            this.ClientSize = new System.Drawing.Size(271, 261);
+            this.Name = "Form1";
+            this.Load += new System.EventHandler(this.Form1_Load);
+            this.ResumeLayout(false);
+
+        }
+
+        private void Form1_Load(object sender, EventArgs e)
+        {
+
+        }
+
+        private void BtnCutBox_Click(object sender, EventArgs e)
+        {
+            if (!ValidateBoxInputs(out double width, out double depth, out double height)) return;
+            if (swApp == null) { ConnectToSolidWorks(); if (swApp == null) return; }
+
+            ModelDoc2 swModel = (ModelDoc2)swApp.ActiveDoc;
+            if (!ValidateDocument(swModel)) return;
+            if (!HasSolidBody(swModel))
+            {
+                MessageBox.Show("Нет тела для вырезания!", "Ошибка", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                return;
+            }
+
+            CutExtrudedBox(swModel, width, depth, height);
+            MessageBox.Show("Параллелепипед вырезан!", "Успех", MessageBoxButtons.OK, MessageBoxIcon.Information);
+        }
+
+        private void CutExtrudedBox(ModelDoc2 swModel, double width, double depth, double height)
+        {
+            swModel.ClearSelection2(true);
+            bool planeSelected = swModel.Extension.SelectByID2("Сверху", "PLANE", 0, 0, 0, false, 0, null, 0);
+            if (!planeSelected)
+            {
+                MessageBox.Show("Не удалось выбрать плоскость 'Сверху'", "Ошибка", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                return;
+            }
+
+            swModel.SketchManager.InsertSketch(true);
+            double halfWidth = width / 2000.0;
+            double halfDepth = depth / 2000.0;
+
+            if (swModel.SketchManager.CreateCenterRectangle(0, 0, 0, halfWidth, halfDepth, 0) == null)
+            {
+                MessageBox.Show("Не удалось создать прямоугольник!", "Ошибка", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                swModel.SketchManager.InsertSketch(true);
+                return;
+            }
+
+            swModel.SketchManager.InsertSketch(true);
+            swModel.FeatureManager.FeatureCut3(
+                true, false, true, (int)swEndConditions_e.swEndCondBlind, 0,
+                height / 1000.0, 0, false, false, false, false,
+                0, 0, false, false, false, false, false, false, false, false, false, false,
+                (int)swStartConditions_e.swStartSketchPlane, 0, false);
+            swModel.ShowNamedView2("*Изометрический", (int)swStandardViews_e.swIsometricView);
+            swModel.ViewZoomtofit2();
+        }
+
+        private void BtnCutHoles_Click(object sender, EventArgs e)
+        {
+            if (!ValidateHoleInputs(out double minDia, out double maxDia, out double step)) return;
+            if (!ValidateBoxInputs(out double width, out double depth, out double height)) return;
+            if (swApp == null) { ConnectToSolidWorks(); if (swApp == null) return; }
+
+            double maxAllowedDia = Math.Min(width, depth);
+            if (maxDia > maxAllowedDia)
+            {
+                MessageBox.Show($"Максимальный диаметр цилиндров ограничен размером основания: {maxAllowedDia} мм",
+                    "Внимание", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                maxDia = maxAllowedDia;
+            }
+
+            ModelDoc2 swModel = (ModelDoc2)swApp.ActiveDoc;
+            if (!ValidateDocument(swModel)) return;
+
+            SketchManager swSketch = swModel.SketchManager;
+            for (double d = minDia; d <= maxDia + 0.001; d += step)
+            {
+                swModel.ClearSelection2(true);
+                bool selected = swModel.Extension.SelectByID2("Сверху", "PLANE", 0, 0, 0, false, 0, null, 0);
+                if (!selected)
+                {
+                    MessageBox.Show("Не удалось выбрать плоскость!", "Ошибка", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    return;
+                }
+
+                swSketch.InsertSketch(true);
+                double radius = d / 2000.0;
+                swSketch.CreateCircleByRadius(0, 0, 0, radius);
+                swSketch.InsertSketch(true);
+
+                Feature cylinderFeature = swModel.FeatureManager.FeatureExtrusion2(true, false, false,
+                    0, 0, height / 1000.0, 0.0, false, false, false, false,
+                    0.0, 0.0, false, false, false, false, true, true, true, 0, 0.0, false);
+                if (cylinderFeature == null)
+                {
+                    MessageBox.Show($"Ошибка при создании цилиндра Ø{d}", "Ошибка", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    return;
+                }
+            }
+
+            swModel.ClearSelection2(true);
+            swModel.EditRebuild3();
+            MessageBox.Show("Цилиндры созданы", "Успех", MessageBoxButtons.OK, MessageBoxIcon.Information);
+        }
+
+
+        private void BtnCutHolesReverse_Click(object sender, EventArgs e)
+        {
+            if (!ValidateHoleInputs(out double minDia, out double maxDia, out double step)) return;
+            if (!ValidateBoxInputs(out double width, out double depth, out double height)) return;
+            if (swApp == null) { ConnectToSolidWorks(); if (swApp == null) return; }
+
+            //Ограничиваем maxDia по меньшей стороне основания
+            double maxAllowedDia = Math.Min(width, depth);
+            if (maxDia > maxAllowedDia)
+            {
+                MessageBox.Show($"Максимальный диаметр цилиндров ограничен размером основания: {maxAllowedDia} мм",
+                    "Внимание", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                maxDia = maxAllowedDia;
+            }
+
+            ModelDoc2 swModel = (ModelDoc2)swApp.ActiveDoc;
+            if (!ValidateDocument(swModel)) return;
+
+            SketchManager swSketch = swModel.SketchManager;
+
+            double currentOuterDia = maxDia;
+            double nextInnerDia = currentOuterDia - step;
+
+            Feature outerFeature = CreateCylinder(swModel, swSketch, currentOuterDia, height);
+            if (outerFeature == null)
+            {
+                MessageBox.Show($"Ошибка при создании цилиндра Ø{currentOuterDia}", "Ошибка", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                return;
+            }
+
+            while (nextInnerDia >= minDia)
+            {
+                Feature innerFeature = CreateCylinder(swModel, swSketch, nextInnerDia, height);
+                if (innerFeature == null)
+                {
+                    MessageBox.Show($"Ошибка при создании внутреннего цилиндра Ø{nextInnerDia}", "Ошибка", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    return;
+                }
+
+                bool deleted = outerFeature.Select2(false, -1);
+                if (!deleted)
+                {
+                    MessageBox.Show($"Не удалось выбрать внешний цилиндр для удаления Ø{currentOuterDia}", "Ошибка", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    return;
+                }
+                bool result = swModel.Extension.DeleteSelection2((int)swDeleteSelectionOptions_e.swDelete_Absorbed);
+                if (!result)
+                {
+                    MessageBox.Show("Не удалось удалить внешний цилиндр", "Ошибка", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    return;
+                }
+
+                outerFeature = innerFeature;
+                currentOuterDia = nextInnerDia;
+                nextInnerDia -= step;
+            }
+
+            swModel.ClearSelection2(true);
+            swModel.EditRebuild3();
+            MessageBox.Show("Цилиндры от большего к меньшему созданы", "Успех", MessageBoxButtons.OK, MessageBoxIcon.Information);
+        }
+
+
+        private Feature CreateCylinder(ModelDoc2 swModel, SketchManager swSketch, double diameter, double height)
+        {
+            swModel.ClearSelection2(true);
+            bool selected = swModel.Extension.SelectByID2("Сверху", "PLANE", 0, 0, 0, false, 0, null, 0);
+            if (!selected) return null;
+
+            swSketch.InsertSketch(true);
+
+            double radius = diameter / 2000.0; // перевод из мм в метры и деление на 2
+            swSketch.CreateCircleByRadius(0, 0, 0, radius);
+            swSketch.InsertSketch(true);
+
+            Feature feat = swModel.FeatureManager.FeatureExtrusion2(true, false, false,
+                0, 0, height / 1000.0, 0, false, false, false, false,
+                0, 0, false, false, false, false, true, true, true, 0, 0, false);
+
+            return feat;
+        }
+    }
+}
